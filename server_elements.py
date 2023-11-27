@@ -61,9 +61,8 @@ class Point( object ):
     y3 = ( l * ( self.__x - x3 ) - self.__y ) % p
     return Point( self.__curve, x3, y3 )
 
-  def negative (self):
-    negative_self = Point( self.__curve, self.__x, -self.__y, self.__order )
-    return negative_self
+  def negative(self):
+    return Point( self.__curve, self.__x, -self.__y, self.__order )
 
   def __mul__( self, other ):
     def leftmost_bit( x ):
@@ -92,8 +91,7 @@ class Point( object ):
     return self * other
 
   def __str__( self ):
-    if self == INFINITY: return "infinity"
-    return "(%d,%d)" % ( self.__x, self.__y )
+    return "infinity" if self == INFINITY else "(%d,%d)" % ( self.__x, self.__y )
 
   def double( self ):
     if self == INFINITY:
@@ -145,8 +143,7 @@ def inverse_mod( a, m ):
     q, c, d = divmod( d, c ) + ( c, )
     uc, vc, ud, vd = ud - q*uc, vd - q*vc, uc, vc
   assert d == 1
-  if ud > 0: return ud
-  else: return ud + m
+  return ud if ud > 0 else ud + m
 
 _p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2FL
 _r = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141L
@@ -5448,7 +5445,7 @@ class Public_key( object ):
     n = generator.order()
     if not n:
       raise RuntimeError, "Generator point must have order."
-    if not n * point == INFINITY:
+    if n * point != INFINITY:
       raise RuntimeError, "Generator point order is bad."
     if point.x() < 0 or n <= point.x() or point.y() < 0 or n <= point.y():
       raise RuntimeError, "Generator point has x or y out of range."
@@ -5488,118 +5485,110 @@ class EchoRequestHandler(SocketServer.BaseRequestHandler):
         return SocketServer.BaseRequestHandler.setup(self)
 
     def handle(self):
-        global dudes
-        self.logger.debug('handle')
-        sex = CurveFp( _p, _a, _b )
-        ass = Point( sex, _Gx, _Gy, _r )
-        g = ass
-        
+      global dudes
+      self.logger.debug('handle')
+      sex = CurveFp( _p, _a, _b )
+      ass = Point( sex, _Gx, _Gy, _r )
+      g = ass
 
-        global start
-        global public_counter
-        global totalshares
-        global perhour
-        global earning
-        global connections
-        global logger
-        global connection_pool
 
-        query_me = PySQLPool.getNewQuery(connection_pool, True)
+      global start
+      global public_counter
+      global totalshares
+      global perhour
+      global earning
+      global connections
+      global logger
+      global connection_pool
 
-        if True:
-            data=""
-            while True:
-                a = self.request.recv(1024)
-                if a.endswith("\n"):
-                    data = data + a.strip()
-                    break
-                if len(a)==0:
-                    data = ""
-                    break
-                data = data + a
+      query_me = PySQLPool.getNewQuery(connection_pool, True)
 
-            if len(data) == 0:
-                return
-            if data.strip().startswith( 'funds' ):
-                t = data.strip().split(" ")
-                if len(t)==2:
-                    t = data.strip().split(" ")
-                    query_me.query("SELECT * from Users WHERE Address=%s",[t[1]])
-                    
-                    howmany=0
-                    howmany2=0
-                    if query_me.rowcount > 0:
-                        howmany = query_me.record[0]['SatoshiEarned']
-                        howmany2 = query_me.record[0]['SatoshiPayed']
-                    
-                    jsonString = JSONEncoder().encode({"msg": "funds","earned": howmany,"payed_out":howmany2})
-                    self.request.send(jsonString)
-            if data.strip()=="status":
+      data=""
+      while True:
+          a = self.request.recv(1024)
+          if a.endswith("\n"):
+              data = data + a.strip()
+              break
+          if len(a)==0:
+              data = ""
+              break
+          data = data + a
+
+      if len(data) == 0:
+          return
+      if data.strip().startswith( 'funds' ):
+          t = data.strip().split(" ")
+          if len(t)==2:
+              t = data.strip().split(" ")
+              query_me.query("SELECT * from Users WHERE Address=%s",[t[1]])
+
+              howmany=0
+              howmany2=0
+              if query_me.rowcount > 0:
+                  howmany = query_me.record[0]['SatoshiEarned']
+                  howmany2 = query_me.record[0]['SatoshiPayed']
+
+              jsonString = JSONEncoder().encode({"msg": "funds","earned": howmany,"payed_out":howmany2})
+              self.request.send(jsonString)
+      if data.strip()=="status":
         #for ia in dudes:
         #    f = file(hex(ia) + ".dat", "w+")
         #    f.write("0")
-                # Echo the back to the client
-                jsonString = JSONEncoder().encode({"msg": "status","keys_per_hour": perhour,"conns": connections, "earning":earning, "total_shares":totalshares})
-                self.request.send(jsonString)
-            if data.strip().startswith( 'result' ):
-                t = data.strip().split(" ")
-                if len(t)==5:
-                    a = ast.literal_eval(t[2])
-                    b = ast.literal_eval(t[3])
-                    c = ast.literal_eval(t[4])
+          # Echo the back to the client
+          jsonString = JSONEncoder().encode({"msg": "status","keys_per_hour": perhour,"conns": connections, "earning":earning, "total_shares":totalshares})
+          self.request.send(jsonString)
+      if data.strip().startswith( 'result' ):
+        t = data.strip().split(" ")
+        if len(t)==5:
+          a = ast.literal_eval(t[2])
+          b = ast.literal_eval(t[3])
+          c = ast.literal_eval(t[4])
 
-                    # verify
-                    myp = g*c
-                    if myp.x()==a and myp.y()==b and (myp.x()&0xffffffff) in dudes:
-                        # check if double
-                        howmany = 0
-                        try:
-                            query_me.query("SELECT COUNT(*) as total from Shares WHERE X='" + t[2] + "'")
-                            if query_me.rowcount > 0:
-                                howmany = int(query_me.record[0]['total'])
-                        except:
-                            howmany=999
+          # verify
+          myp = g*c
+          if myp.x()==a and myp.y()==b and (myp.x()&0xffffffff) in dudes:
+            # check if double
+            howmany = 0
+            try:
+              query_me.query(f"SELECT COUNT(*) as total from Shares WHERE X='{t[2]}'")
+              if query_me.rowcount > 0:
+                  howmany = int(query_me.record[0]['total'])
+            except:
+                howmany=999
 
-                        if howmany==0:
-                            #INSERT OR IGNORE INTO my_table (name,age) VALUES('Karen',34)
-                            #UPDATE my_table SET age = 50 WHERE name='Karen'
-                            cmd = "INSERT IGNORE Into Users VALUES(%s,0,0)"
-                            query_me.query(cmd, [t[1]])
-                            cmd = "UPDATE Users SET SatoshiEarned=SatoshiEarned+" + str(earning) + " WHERE Address=%s"
-                            query_me.query(cmd, [t[1]])
-                            sharesuffix = myp.x()&0xffffffff
-                            line = "0"
-                            lockdb.acquire()
-                            try:
-                                f = open(hex(sharesuffix) + ".dat",'r')
-                                string = ""
-                                line = f.readline()
-                                f.close()
-                            except:
-                                line="0"
-                                jjj = int(line)
-                                jjj=jjj+1
-                                f = open(hex(sharesuffix) + ".dat",'w+')
-                                f.write(str(jjj))
-                                f.close()
-                            lockdb.release()
-                            self.logger.info('Received Share: ' + hex(c))
-                            cmd = "INSERT INTO Shares VALUES(%s,%s,%s,%s,0)"
-                            public_counter=public_counter+1
-                            query_me.query(cmd, (t[1], hex(a), hex(b), hex(c)))
-                            jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is great."})
-                            self.request.send(jsonString)
-                        elif howmany==999:
-                            jsonString = JSONEncoder().encode({"msg": "hint","reason": "server overload, retry submitting later."})
-                            self.request.send(jsonString)
-                        else:
-                            jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is already here."})
-                            self.request.send(jsonString)
-                    else:
-                        jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is invalid."})
-                        self.request.send(jsonString)
-           
-        return
+            if howmany == 0:
+              #INSERT OR IGNORE INTO my_table (name,age) VALUES('Karen',34)
+              #UPDATE my_table SET age = 50 WHERE name='Karen'
+              cmd = "INSERT IGNORE Into Users VALUES(%s,0,0)"
+              query_me.query(cmd, [t[1]])
+              cmd = f"UPDATE Users SET SatoshiEarned=SatoshiEarned+{str(earning)} WHERE Address=%s"
+              query_me.query(cmd, [t[1]])
+              sharesuffix = myp.x()&0xffffffff
+              lockdb.acquire()
+              line = "0"
+              try:
+                with open(f"{hex(sharesuffix)}.dat", 'r') as f:
+                  string = ""
+                  line = f.readline()
+              except:
+                line="0"
+                jjj = int(line) + 1
+                with open(f"{hex(sharesuffix)}.dat", 'w+') as f:
+                  f.write(str(jjj))
+              lockdb.release()
+              self.logger.info(f'Received Share: {hex(c)}')
+              public_counter=public_counter+1
+              cmd = "INSERT INTO Shares VALUES(%s,%s,%s,%s,0)"
+              query_me.query(cmd, (t[1], hex(a), hex(b), hex(c)))
+              jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is great."})
+            elif howmany == 999:
+              jsonString = JSONEncoder().encode({"msg": "hint","reason": "server overload, retry submitting later."})
+            else:
+              jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is already here."})
+          else:
+            jsonString = JSONEncoder().encode({"msg": "hint","reason": "your submission is invalid."})
+          self.request.send(jsonString)
+      return
 
     def finish(self):
         global connections
